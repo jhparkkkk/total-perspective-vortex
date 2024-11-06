@@ -1,11 +1,18 @@
+import os
+from src.EEGDataLoader import EEGDataLoader
+
 
 
 if __name__ == "__main__":
+    print("----------------- 🧠 EEG Data Analysis 🧠 -----------------")
     # Load the data
-    data = load_data()
+    #file_path = input("Enter the path of the dataset: ")
+    file_path = os.path.join('dataset', 'S001', 'S001R03.edf')
+    print("Loading data from: ", file_path)
+    data_loader = EEGDataLoader(file_path=file_path)
+    data_loader.load_data()
+
+    
     # Preprocess the data
-    data = preprocess_data(data)
     # Train the model
-    model = train_model(data)
     # Evaluate the model
-    evaluate_model(model, data)
