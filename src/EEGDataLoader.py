@@ -2,27 +2,12 @@ import mne
 import mne.io.edf.edf
 import shutil
 from typing import Optional
-from dataclasses import dataclass
-
+from .data_models import ChannelInfo, EEGData
+from matplotlib import pyplot as plt
 RawEDF = mne.io.edf.edf.RawEDF
 
 TERMINAL_WIDTH = shutil.get_terminal_size().columns
 
-
-@dataclass
-class ChannelInfo:
-    channels: 'list[str]'
-    highpass_Hz: float
-    lowpass_Hz: float
-
-@dataclass
-class EEGData:
-    subject_id: int
-    run_id: int
-    timestamp: Optional[str] = None
-    duration_seconds: Optional[int] = None
-    sampling_frequency: Optional[int] = None
-    events: 'numpy.ndarray' = None
 
 event_lookup = {
     (1, 2): {1: "rest"},
@@ -32,7 +17,7 @@ event_lookup = {
 
 class EEGDataLoader:
     def __init__(self, file_path: str):
-        self.file_path = file_path
+        self.file_path : str = file_path
         self.raw_data : RawEDF = None
 
     def load_data(self):
@@ -40,6 +25,15 @@ class EEGDataLoader:
         Load the EEG data from the .edf file path
         """
         self.raw_data = mne.io.read_raw_edf(self.file_path, preload=True)
+        print(self.raw_data.get_data())
+        print(self.raw_data.times)
+        print(self.raw_data.times.shape)
+        self.raw_data = self.raw_data.pick_types(meg=False, eeg=True, eog=False, exclude='bads')
+        # Assuming you have already loaded the data
+        self.raw_data.plot()
+        print('PLOP')
+        plt.show()
+
         self.ChannelInfo = self._extract_channel_info()
         self.EEGData = self._extract_eeg_data()
         
@@ -68,7 +62,7 @@ class EEGDataLoader:
         print("\n" + header.center(TERMINAL_WIDTH, "-"))
         print("Subject ID: ", self.EEGData.subject_id)
         print("Run ID: ", self.EEGData.run_id)
-        print("Timestamp: ", self.EEGData.timestamp)
+        print("Date: ", self.EEGData.date)
         print("Duration: ", self.EEGData.duration_seconds, " seconds")
 
         print("\nEvents:")
@@ -107,10 +101,14 @@ class EEGDataLoader:
         return EEGData(
             subject_id=int(subject_id),
             run_id=int(run_id),
-            timestamp=self.raw_data.info['meas_date'],
+            date=self.raw_data.info['meas_date'],
             duration_seconds=self.raw_data.times[-1],
             sampling_frequency=self.raw_data.info['sfreq'],
-            events=self._extract_events()
+            channel_info=self.ChannelInfo,
+            events=self._extract_events(),
+            raw_eeg_data=self.raw_data,
+            eeg_data=self.raw_data.get_data(),
+            timestamps=self.raw_data.times
         )    
     
     def _extract_channel_info(self) -> ChannelInfo:
@@ -128,7 +126,7 @@ class EEGDataLoader:
 
     def _decode_event(self, run_id: int) -> str:
         """
-        Decode the event id into a human readable format
+        Decode the event type using event_lookup into a human readable format
         """
         for key, value in event_lookup.items():
             if run_id in key:
