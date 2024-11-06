@@ -22,7 +22,7 @@ channels : position des électrodes dans le cuir chevelu (système international
 - 2, 4, 6, 8 à droite 
 - z au centre
 
-Ici, 64 canaux EEG sont incluse
+Ici, 64 canaux EEG sont inclus
 
 fréquence d'échantillonage: par ex si la fréquence est de 160 Hz alors ça veut dire que les données EEG sont enregistrées 160 fois par seconde pour chaque canal -> 160 points de données. 
 
@@ -36,8 +36,16 @@ event[start(int), previous_event_id(int), event_id(int)]
 par exemple event[0, 0, 1]
 l'event a demarré à l'échantillon 0, l'event est le 1er il n'y en a pas eu avant, id de l'event actuel. 
 
+event id :
+- T0 : repose
+- T1 :
+    - si run 
+
+onset(sample): position in the data stream, can be converted to seconds by dividing it by the sampling frequency
+
 I. Process EEG datas (parsing and filtering)
 - [ ] load dataset
+    - [ ] exclude bads ? to test 
 - [ ] visualize raw data
 - [ ] filter frequencies
 - [ ] visualize preprocessed data
