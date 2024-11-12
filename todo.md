@@ -43,12 +43,34 @@ event id :
 
 onset(sample): position in the data stream, can be converted to seconds by dividing it by the sampling frequency
 
+viz:
+- signaux eeg en fonction du temps. Un tracé repré l'amplitude du signal EEG mesuré en microvolt (μV) -> variation du voltage en fonction du temps
+- events sont marqués par les plages chromatiques (T0, T1, T2)
+-> comparer activité eeg de tous les canaux
+-> un motif associé à une task
+-> séquences temporelles de l'expérience
+
+
+
+fourier transform : pour obtenir le spectre de fréquence 
+
+N_FFT = résolution fréquentielle. 
+
+Power Spectral Density (PSD)
+
+
+Independant Component Analysis (ICA)
+- technique for estimating independent source signals from a set of recordings in which the source signals were mixed together in unknown ratios.
+
+Principal Component Analysis (PCA) : simplify EEG data, reduce noises, reduce dimensionality
+
+
 I. Process EEG datas (parsing and filtering)
-- [ ] load dataset
+- [x] load dataset
     - [ ] exclude bads ? to test 
-- [ ] visualize raw data
-- [ ] filter frequencies
-- [ ] visualize preprocessed data
+- [x] visualize raw data
+- [x] filter frequencies
+- [x] visualize preprocessed data
 
 
 the power of the signal by frequency and by channel
@@ -68,3 +90,14 @@ A l'aide je ne comprends rien:
 [[https://www.youtube.com/watch?v=B3u57yF2JSc]]
 
 [[https://towardsdatascience.com/a-step-by-step-implementation-of-principal-component-analysis-5520cc6cd598]]
+
+[[https://neuraldatascience.io/7-eeg/time_freq.html]]
+
+[[https://arxiv.org/html/2405.01269v1]]
+
+
+about channels selection:
+[[https://arxiv.org/pdf/1312.2877]]
+
+FC3, FCZ, FC4, C3, C1, CZ,
+C2, and C4

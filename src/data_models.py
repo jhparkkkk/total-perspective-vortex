@@ -16,6 +16,6 @@ class EEGData:
     sampling_frequency: Optional[int] = None
     channel_info: Optional[ChannelInfo] = None
     events: 'numpy.ndarray' = None
-    raw_eeg_data: 'numpy.ndarray' = None
+    raw: 'numpy.ndarray' = None
     eeg_data: 'numpy.ndarray' = None
     timestamps: 'numpy.ndarray' = None

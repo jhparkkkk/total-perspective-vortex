@@ -3,19 +3,15 @@ import numpy as np
 from .data_models import EEGData
 
 class EEGDataVizualizer:
-    def __init__(self, eeg_data: EEGData):
+    def __init__(self):
         """
         Initialize the EEGEventVizualizer with EEGData
         """
-        self.eeg_data = eeg_data
-    
-    def plot_eeg(self):
+    def plot_eeg(self, raw):
         """
         Plot the EEG data
         """
 
-        if self.eeg_data.events is None:
-            raise ValueError("Events not loaded yet.")
-
-        self.eeg_data.raw_eeg_data.plot()
+        raw.plot()
         plt.show()
+

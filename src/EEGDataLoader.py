@@ -4,8 +4,9 @@ import shutil
 from typing import Optional
 from .data_models import ChannelInfo, EEGData
 from matplotlib import pyplot as plt
-RawEDF = mne.io.edf.edf.RawEDF
 
+
+RawEDF = mne.io.edf.edf.RawEDF
 TERMINAL_WIDTH = shutil.get_terminal_size().columns
 
 
@@ -16,26 +17,18 @@ event_lookup = {
 }
 
 class EEGDataLoader:
-    def __init__(self, file_path: str):
-        self.file_path : str = file_path
+    def __init__(self):
         self.raw_data : RawEDF = None
 
-    def load_data(self):
+    def load_data(self, file_path: str) -> EEGData:
         """
         Load the EEG data from the .edf file path
         """
+        self.file_path = file_path
         self.raw_data = mne.io.read_raw_edf(self.file_path, preload=True)
-        print(self.raw_data.get_data())
-        print(self.raw_data.times)
-        print(self.raw_data.times.shape)
-        self.raw_data = self.raw_data.pick_types(meg=False, eeg=True, eog=False, exclude='bads')
-        # Assuming you have already loaded the data
-        self.raw_data.plot()
-        print('PLOP')
-        plt.show()
-
         self.ChannelInfo = self._extract_channel_info()
         self.EEGData = self._extract_eeg_data()
+        return self.EEGData
         
     
     def describe_channel_info(self):
@@ -65,7 +58,7 @@ class EEGDataLoader:
         print("Date: ", self.EEGData.date)
         print("Duration: ", self.EEGData.duration_seconds, " seconds")
 
-        print("\nEvents:")
+        print(f"\n{len(self.EEGData.events)} events found.\n")
         print(f"{'Onset (sample)':<15} {'Timestamp (s)':<15} {'Previous Code':<15} {'Event Type':<15} {'Decoded Event Type':<30}")
         print("-" * TERMINAL_WIDTH)
         task = self._decode_event(self.EEGData.run_id)
@@ -106,7 +99,7 @@ class EEGDataLoader:
             sampling_frequency=self.raw_data.info['sfreq'],
             channel_info=self.ChannelInfo,
             events=self._extract_events(),
-            raw_eeg_data=self.raw_data,
+            raw=self.raw_data,
             eeg_data=self.raw_data.get_data(),
             timestamps=self.raw_data.times
         )    
