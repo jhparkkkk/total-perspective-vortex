@@ -65,12 +65,12 @@ Independant Component Analysis (ICA)
 Principal Component Analysis (PCA) : simplify EEG data, reduce noises, reduce dimensionality
 
 
-I. Process EEG datas (parsing and filtering)
+I. Preprocessing, parsing, and formatting:
 - [x] load dataset
-    - [ ] exclude bads ? to test 
-- [x] visualize raw data
-- [x] filter frequencies
-- [x] visualize preprocessed data
+    - [x] exclude bads ? to test 
+- [x] visualize raw data (before)
+- [x] filter by useful frequencies
+- [x] visualize preprocessed data (after)
 
 
 the power of the signal by frequency and by channel
@@ -79,10 +79,18 @@ the power of the signal by frequency and by channel
     -> permet d'identifier quelles frequences dominent dans un signal
 
 II. Implement a dimensionality reduction algorithm
+- [ ] implement my own PCA to transform the data into meaningful features
 
 III. Use the pipeline object from scikit-learn
+- [ ] create pipeline using dimensionality reduction (my own PCA)
+- [ ] add classifier for motion detection task
+- [ ] simulate streaming with playback mechanism
 
-IV. Classify a data stream in 'real time'
+
+IV. Train, Validation and Test
+- [ ] cross-validation to evaluate pipeline
+- [ ] split data into training/validation/test sets
+- [ ] minimum accuracy of 60% on the test set
 
 
 A l'aide je ne comprends rien:
@@ -101,3 +109,36 @@ about channels selection:
 
 FC3, FCZ, FC4, C3, C1, CZ,
 C2, and C4
+
+
+```
+python mybci.py plot --subject 4 --run 14
+python mybci.py train --subject 1 --run 4
+python mybci.py train
+python mybci.py predict --subject 2 --run 6
+```
+
+BaseEstimator
+standardiser l'interface des objets de scikit-learn 
+méhode .fit() .get_params()
+
+fit: Prepares or "fits" the step (e.g., learns parameters, initializes state).
+transform: Applies a transformation to the input data and passes the transformed data to the next step.
+Donc si je veux utiliser BaseEstimator et TransformerMixin je dois implémenter fit et transform dans ma class custom EEGPreprocessor
+
+#### mne
+reject_criteria : exclude epochs that contain excessive noise or artifact
+reject_criteria = dict(eeg=150e-6)
+
+because EEG signals are prone to artifacts (eye blinks, muscles mvt, external noises)
+low treshold : more strict rejection -> clean data with minimum noise
+high threshold : less strict rejection -> noisier dataset but retain more epochs for training
+
+*tmin tmax* in seconds
+tmin = starting time of the epoch relative to the event
+tmax = ending time of the epoch relative to event
+-> when analyzing motor movements the common window is -0.2 and 0.5 or -1.0 and 4.00 ??
+[[https://mne.tools/stable/auto_examples/decoding/decoding_csp_eeg.html]]
+
+
+
