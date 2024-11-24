@@ -30,7 +30,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 
-def plot_mode(file_path: str):
+def plot(file_path: str):
     # Load the data
     data_loader = EEGDataLoader()
     eeg_data: EEGData = data_loader.load_data(file_path=file_path)
@@ -41,15 +41,15 @@ def plot_mode(file_path: str):
     eeg_vizualizer.plot_eeg(eeg_data.raw)
 
     # Preprocess the data
-    eeg_preprocessor = EEGPreprocessor()
-    # psd = eeg_preprocessor.compute_psd(raw=eeg_data.raw)
-    filtered_raw = eeg_preprocessor.filter_data(raw=eeg_data.raw)
+    preprocessor = EEGPreprocessor()
+    # psd = preprocessor.compute_psd(raw=eeg_data.raw)
+    filtered_raw = preprocessor.filter_data(raw=eeg_data.raw)
 
     # Visualize the data
     eeg_vizualizer.plot_eeg(filtered_raw)
 
 
-def train_mode(file_path: str):
+def train(file_path: str):
     if file_path:
         file_paths = [file_path]
     else:
@@ -58,18 +58,12 @@ def train_mode(file_path: str):
     all_labels = []
 
     data_loader = EEGDataLoader()
-    eeg_preprocessor = EEGPreprocessor()
+    preprocessor = EEGPreprocessor()
     for file_path in file_paths:
         print("Loading data from: ", file_path)
         eeg_data: EEGData = data_loader.load_data(file_path=file_path)
-        filtered_raw = eeg_preprocessor.preprocess(raw=eeg_data.raw)
-        epochs = eeg_preprocessor.epoch_data(filtered_raw, eeg_data.events)
-        epochs.drop_bad()
-        #epochs.plot_drop_log()
-        print(f"Remaining epochs: {len(epochs)}")
-        print(f"Bad channels: {filtered_raw.info['bads']}")
-        #        epochs.plot(n_epochs=10, title="Retained Epochs", block=True)
-
+        filtered_raw = preprocessor.preprocess(raw=eeg_data.raw)
+        epochs = preprocessor.epoch_data(filtered_raw, eeg_data.events)
         X = epochs.get_data()
         y = epochs.events[:, -1]
 
@@ -86,7 +80,7 @@ def train_mode(file_path: str):
     pipeline = Pipeline(
         [
             ("scaler", StandardScaler()),
-            #("preprocessor", EEGPreprocessor()),
+            ("pca", PCA(n_components=0.99)), 
             ("classifier", LinearDiscriminantAnalysis()),
         ]
     )
@@ -95,11 +89,13 @@ def train_mode(file_path: str):
     print("Mean accuracy:", np.mean(scores))
 
 
-def predict_mode():
+def predict():
     pass
 
 
 def create_file_path(subject_id: int, recording_id: int):
+    if subject_id is None or recording_id is None:
+        return None
     return os.path.join(
         DATA_DIR, f"S{subject_id:03}", f"S{subject_id:03}R{recording_id:02}.edf"
     )
@@ -147,14 +143,14 @@ if __name__ == "__main__":
     print("----------------- 🧠 EEG Data Analysis 🧠 -----------------")
     # parse cmd arguments
     args = parse_arguments()
-    print("args,", args)
-
     file_path = create_file_path(args.subject, args.recording)
-    print("Loading data from: ", file_path)
+    if file_path:
+        print("Loading data from: ", file_path)
+
     mode_map = {
-        "plot": plot_mode,
-        "train": train_mode,
-        "predict": predict_mode,
+        "plot": plot,
+        "train": train,
+        "predict": predict,
     }
 
     mode_function = mode_map.get(args.mode)
@@ -162,72 +158,4 @@ if __name__ == "__main__":
         print("Invalid mode. Please choose from: plot, train, predict")
 
     mode_function(file_path)
-    exit()
-    # Load the data
-    # file_path = input("Enter the path of the dataset: ")
-
-    file_paths = glob.glob(os.path.join(DATA_DIR, "S*", "*.edf"))
-    print(f"Found {len(file_paths)} files in the dataset.")
-    exit()
-    file_path = os.path.join("dataset", "S042", "S042R08.edf")
-    print("Loading data from: ", file_path)
-
-    data_loader = EEGDataLoader()
-    eeg_data: EEGData = data_loader.load_data(file_path=file_path)
-    data_loader.describe_eeg_data()
-
-    # Visualize the data
-    eeg_vizualizer = EEGDataVizualizer()
-    eeg_vizualizer.plot_eeg(eeg_data.raw)
-
-    # Preprocess the data
-    eeg_preprocessor = EEGDataPreprocessing()
-    psd = eeg_preprocessor.compute_psd(raw=eeg_data.raw)
-
-    filtered_raw = eeg_preprocessor.filter_data(raw=eeg_data.raw)
-
-    # Visualize the data
-    eeg_vizualizer.plot_eeg(filtered_raw)
-
-    # plt.show()
-
-    good_channels = ["FC3", "FCZ", "FC4", "C3", "C1", "CZ", "C2", "C4"]
-    bad_channels = [ch for ch in filtered_raw.ch_names if ch not in good_channels]
-    filtered_raw.info["bads"] = bad_channels
-
-    # Train the model
-    picks = mne.pick_types(
-        filtered_raw.info, meg=False, eeg=True, stim=False, eog=False, exclude="bads"
-    )
-    epochs = mne.Epochs(
-        filtered_raw, eeg_data.events, baseline=None, verbose=True, picks=picks
-    )
-    print(epochs)
-    print(epochs.get_data().shape)
-    print(epochs.get_data())
-    X = epochs.get_data(copy=False)
-
-    pca = UnsupervisedSpatialFilter(PCA(6), average=False)
-    pca_data = pca.fit_transform(X)
-    ev = mne.EvokedArray(
-        np.mean(pca_data, axis=0),
-        mne.create_info(6, epochs.info["sfreq"], ch_types="eeg"),
-        tmin=-0.2,
-    )
-    ev.plot(show=False, window_title="PCA", time_unit="s")
-    # plt.show()
-    # Evaluate the model
-
-    clf = LinearDiscriminantAnalysis()
-
-    labels = epochs.events[:, -1]
-    print("Shape of PCA data:", pca_data.shape)  # Should be (29, 6, 113)
-    print("Shape of labels:", labels.shape)  # Should be (29,)
-    if pca_data.shape[0] == len(labels):
-        X = pca_data.reshape(pca_data.shape[0], -1)
-        # Cross-validation
-        scores = cross_val_score(clf, X, labels, cv=5)
-        print("Cross-validation scores:", scores)
-        print("Mean accuracy:", scores.mean())
-    else:
-        print("Mismatch between PCA data and labels after correction.")
+   

@@ -104,14 +104,15 @@ class EEGPreprocessor(BaseEstimator, TransformerMixin):
             verbose=True,
             reject=dict(eeg=150e-6),
         )
-
+        epochs.drop_bad()
         return epochs
 
     def fit(self, X, y=None):
         return self
 
     def transform(self, X):
+        print('PLOP')
         n_epochs, n_channels, n_times = X.shape
         reshaped_X = X.reshape(n_epochs, -1) 
-        X_pca = self.pca.transform(reshaped_X)
-        return X_pca
+        X_pca = self.pca.fit_transform(reshaped_X)
+        return reshaped_X
