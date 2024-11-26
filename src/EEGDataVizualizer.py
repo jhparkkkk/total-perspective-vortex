@@ -9,10 +9,12 @@ class EEGDataVizualizer:
         Initialize the EEGEventVizualizer with EEGData
         """
 
-    def plot_eeg(self, raw):
+    def plot_eeg(self, raw, title=None):
         """
         Plot the EEG data
         """
+        fig = raw.plot(show=True)
 
-        raw.plot()
+        if title:
+            fig.canvas.manager.set_window_title(title)
         plt.show()

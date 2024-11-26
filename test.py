@@ -13,6 +13,7 @@ See https://en.wikipedia.org/wiki/Common_spatial_pattern and
 :footcite:`SchalkEtAl2004` and is available at PhysioNet
 :footcite:`GoldbergerEtAl2000`.
 """
+
 # Authors: Martin Billinger <martin.billinger@tugraz.at>
 #
 # License: BSD-3-Clause

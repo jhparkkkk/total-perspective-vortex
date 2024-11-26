@@ -35,11 +35,19 @@ event[start(int), previous_event_id(int), event_id(int)]
 par exemple event[0, 0, 1]
 l'event a demarré à l'échantillon 0, l'event est le 1er il n'y en a pas eu avant, id de l'event actuel.
 
+
 event id :
 
 - T0 : repose
 - T1 :
   - si run
+
+EEG signals are composed of oscillations at different frequencies, which are categorized into bands:
+1. Delta (0.5–4 Hz): Deep sleep, unconscious states.
+2. Theta (4–8 Hz): Light sleep, drowsiness, meditation.
+3. Alpha (8–13 Hz): Relaxation, eyes-closed resting state.
+4. Beta (13–30 Hz): Active thinking, motor activity.
+5. Gamma (30–100 Hz): Higher-order cognitive functions, attention.
 
 onset(sample): position in the data stream, can be converted to seconds by dividing it by the sampling frequency
 
@@ -56,6 +64,7 @@ fourier transform : pour obtenir le spectre de fréquence
 N_FFT = résolution fréquentielle.
 
 Power Spectral Density (PSD)
+
 
 Independant Component Analysis (ICA)
 
@@ -146,3 +155,5 @@ problèmes:
     - revoir EEGDataLoader.load_data -> au lieu de retourner un objet EEGData, envoyer raw
 
 
+[[https://www.sciencedirect.com/science/article/pii/S2352340924001525]]
+The dataset can be used to 1) decode MI trials in a binary classification setting: using the same task, either MI or ME; 2) decode MI trials in a multi-class classification setting, using two tasks of either MI or ME; 3) decode MI trials using bilateral or unilateral movements: selecting either fists vs. both feet or left fist vs. right fist; 4) experiment transfer learning using cross-subject tasks: calibrating on specific subjects and evaluating others employing relevant transfer-learning techniques; and 5) train deep-learning models using the large number of trial provisions.
