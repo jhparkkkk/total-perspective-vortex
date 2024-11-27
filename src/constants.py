@@ -12,4 +12,5 @@ N_COMPONENTS = 8
 N_FFT = 800
 
 import shutil
+
 TERMINAL_WIDTH = shutil.get_terminal_size().columns

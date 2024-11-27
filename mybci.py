@@ -29,9 +29,11 @@ from sklearn.model_selection import cross_val_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-import pickle 
+import pickle
 import time
 from sklearn.metrics import accuracy_score
+
+
 def plot(file_path: [str]):
     """
     Load the EEG data and plot it raw and after preprocessing (filtering)
@@ -117,17 +119,19 @@ def train(file_paths: list[str]):
     print("Model saved to model.pkl")
 
 
-def simulate_real_time_predictions(pipeline, features: np.ndarray, labels: np.ndarray, delay: float = 2.0):
+def simulate_real_time_predictions(
+    pipeline, features: np.ndarray, labels: np.ndarray, delay: float = 2.0
+):
     """
     Simulate real-time predictions on streaming data.
-    
+
     Args:
         - pipeline: The trained pipeline for making predictions
         - features: Array of features for each epoch
         - labels: Corresponding labels for the chunks
         - delay: Time delay (in seconds) between each epoch
     """
-    
+
     header = f"{'Epoch':<10}{'Prediction':<15}{'Truth':<10}{'Equal?':<10}"
     print(header)
 
@@ -141,7 +145,7 @@ def simulate_real_time_predictions(pipeline, features: np.ndarray, labels: np.nd
 def predict(file_paths: list[str]):
     if not file_paths:
         raise ValueError("No file paths provided for prediction")
-    
+
     file_path = file_paths[0]
     with open("model.pkl", "rb") as model_file:
         pipeline = pickle.load(model_file)
@@ -166,9 +170,7 @@ def predict(file_paths: list[str]):
     accuracy = accuracy_score(labels, predictions)
     print("Accuracy:", accuracy)
 
-
     simulate_real_time_predictions(pipeline, features, labels)
-    
 
     pass
 

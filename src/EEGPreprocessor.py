@@ -40,7 +40,7 @@ class EEGPreprocessor(BaseEstimator, TransformerMixin):
         """
         print("channel names in raw:", raw.ch_names)
         raw = self.filter_data(raw)
-        #raw = self.mark_bad_channels(raw)
+        # raw = self.mark_bad_channels(raw)
         print("channel names in raw:", len(raw.ch_names))
 
         return raw
@@ -77,11 +77,10 @@ class EEGPreprocessor(BaseEstimator, TransformerMixin):
         eegbci.standardize(raw)
         montage = make_standard_montage(DEFAULT_MONTAGE)
         raw.set_montage(montage)
-        psd = raw.compute_psd(method="multitaper", picks="eeg", fmin=5, fmax=30)
-        raw.plot_psd(fmax=80, n_fft=156, show=True)
-
+        psd = raw.compute_psd(method='multitaper', picks='eeg', fmin=1, fmax=80, n_fft=N_FFT)
         psd.plot()
         plt.show()
+        return psd
 
     def extract_features(self, epochs: mne.epochs.Epochs) -> np.ndarray:
         """
@@ -96,11 +95,8 @@ class EEGPreprocessor(BaseEstimator, TransformerMixin):
             - features: the extracted features as the mean of the PSD
         """
         try:
-            n_times = epochs.get_data().shape[2]  
-            n_fft = min(800, n_times)
-
             psd_data = epochs.compute_psd(
-                fmin=self.l_freq, fmax=self.h_freq, n_fft=n_fft, method="welch"
+                fmin=self.l_freq, fmax=self.h_freq, n_fft=N_FFT, method="welch"
             )
 
             psds, freqs = psd_data.get_data(return_freqs=True)
@@ -123,11 +119,11 @@ class EEGPreprocessor(BaseEstimator, TransformerMixin):
         )
         print("Selected picks:", picks)
         if run in [1, 2]:
-            reject = None
-            flat = None  
-        else:  
+            reject = None 
+            flat = None
+        else: 
             reject = dict(eeg=150e-6)
-            flat = dict(eeg=1e-6)
+            flat = dict(eeg=1e-6) 
         selected_channel_names = [raw.ch_names[i] for i in picks]
         print("Selected channel names:", selected_channel_names)
         epochs = mne.Epochs(
