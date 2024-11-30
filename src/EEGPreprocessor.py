@@ -38,11 +38,9 @@ class EEGPreprocessor(BaseEstimator, TransformerMixin):
         """
         Preprocess the raw data
         """
-        print("channel names in raw:", raw.ch_names)
+        raw = self.set_montage(raw)
         raw = self.filter_data(raw)
-        # raw = self.mark_bad_channels(raw)
-        print("channel names in raw:", len(raw.ch_names))
-
+        raw = self.mark_bad_channels(raw)
         return raw
 
     def filter_data(self, raw):
@@ -59,84 +57,84 @@ class EEGPreprocessor(BaseEstimator, TransformerMixin):
         """
         Remove the bad channels
         """
-        # standardize the channel names
-        eegbci.standardize(raw)
-        montage = make_standard_montage(DEFAULT_MONTAGE)
-        raw.set_montage(montage)
-
-        # mark bad channels
         good_channels = GOOD_CHANNELS
         bad_channels = [ch for ch in raw.ch_names if ch not in good_channels]
         raw.info["bads"] = bad_channels
+
+        return raw
+
+    def set_montage(self, raw):
+        """
+        Set the montage
+        """
+        eegbci.standardize(raw)
+        montage = make_standard_montage(DEFAULT_MONTAGE)
+        raw.set_montage(montage)
         return raw
 
     def compute_psd(self, raw):
         """
         Compute the power spectral density
         """
-        eegbci.standardize(raw)
-        montage = make_standard_montage(DEFAULT_MONTAGE)
-        raw.set_montage(montage)
-        psd = raw.compute_psd(method='multitaper', picks='eeg', fmin=1, fmax=80, n_fft=N_FFT)
+        psd = raw.compute_psd(method="multitaper", picks="eeg", fmin=1, fmax=80)
         psd.plot()
-        plt.show()
         return psd
 
-    def extract_features(self, epochs: mne.epochs.Epochs) -> np.ndarray:
+    def extract_features_and_labels(self, raw) -> np.ndarray:
         """
-        Extract features  from the epochs by computing the power spectral density (PSD)
+        Extract features and labels from the EEG data.
 
         PSD represents how power of a signal varies across frequency.
         PSD extracts interpretable features from the EEG data.
         units: measured in microvolts squared per hertz (µV²/Hz)
+
         paremeters:
-            - epochs: the preprocessed epochs data
+            - raw (mne.io.Raw): the raw EEG data
         returns:
-            - features: the extracted features as the mean of the PSD
+            - features (np.ndarray): the features as the mean of the PSD
+            - labels (np.ndarray): the labels for each epoch
         """
         try:
+            epochs = self.epoch_data(raw)
+
             psd_data = epochs.compute_psd(
-                fmin=self.l_freq, fmax=self.h_freq, n_fft=N_FFT, method="welch"
+                fmin=self.l_freq, fmax=self.h_freq, method="multitaper"
             )
 
             psds, freqs = psd_data.get_data(return_freqs=True)
 
+            # psds.shape = (n_epochs, n_channels, n_freqs)
             features = psds.mean(axis=2)
 
-            print("features extracted: shape", features.shape)
+            labels = epochs.events[:, -1]
+            return features, labels
 
-            return features
         except Exception as e:
             print("Error extracting features:", e)
             raise e
 
-    def epoch_data(self, raw, events, run):
+    def epoch_data(self, raw):
         """
         Epoch the data
         """
+        events, _ = mne.events_from_annotations(raw)
+
         picks = mne.pick_types(
             raw.info, meg=False, eeg=True, stim=False, eog=False, exclude="bads"
         )
-        print("Selected picks:", picks)
-        if run in [1, 2]:
-            reject = None 
-            flat = None
-        else: 
-            reject = dict(eeg=150e-6)
-            flat = dict(eeg=1e-6) 
-        selected_channel_names = [raw.ch_names[i] for i in picks]
-        print("Selected channel names:", selected_channel_names)
+
+        event_id = dict(T1=1, T2=2)
+
         epochs = mne.Epochs(
-            raw,
-            events,
+            raw=raw,
+            events=events,
+            event_id=event_id,
             tmin=-1.0,
-            tmax=4.0,
+            tmax=2.0,
             picks=picks,
-            baseline=(None, 0),
+            baseline=(None),
             preload=True,
             verbose=True,
-            reject=reject,
-            flat=flat,
         )
         epochs.drop_bad()
         return epochs

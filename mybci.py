@@ -1,7 +1,14 @@
 import os
 import argparse
 
-from src.constants import N_FFT, DEFAULT_MONTAGE, DATA_DIR, TERMINAL_WIDTH
+from src.constants import (
+    N_FFT,
+    DEFAULT_MONTAGE,
+    DATA_DIR,
+    TERMINAL_WIDTH,
+    BAD_SUBJECTS,
+    RUNS,
+)
 from src.EEGDataLoader import EEGDataLoader
 from src.EEGDataVizualizer import EEGDataVizualizer
 from src.EEGPreprocessor import EEGPreprocessor
@@ -32,15 +39,27 @@ from sklearn.preprocessing import StandardScaler
 import pickle
 import time
 from sklearn.metrics import accuracy_score
+from sklearn.model_selection import ShuffleSplit
+
+from sklearn.model_selection import train_test_split
+
+from sklearn.svm import SVC
+from sklearn.metrics import classification_report
+from imblearn.over_sampling import SMOTE
+
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+
+import time
 
 
-def plot(file_path: [str]):
+def plot(subject_id: list[int], run_id: list[int]):
     """
     Load the EEG data and plot it raw and after preprocessing (filtering)
     """
-    if len(file_path) != 1:
+    if len(subject_id) != 1 or len(run_id) != 1:
         raise ValueError("Only a single file path is allowed for plotting")
-    file_path = file_path[0]
+    file_path = create_file_path(subject_id[0], run_id[0])
+
     # Load the data
     loader = EEGDataLoader()
     raw = loader.load_data(file_path=file_path)
@@ -54,6 +73,7 @@ def plot(file_path: [str]):
 
     # Preprocess the data
     preprocessor = EEGPreprocessor()
+    raw = preprocessor.set_montage(raw)
     filtered_raw = preprocessor.filter_data(raw=raw)
     preprocessor.compute_psd(raw=filtered_raw)
 
@@ -64,42 +84,27 @@ def plot(file_path: [str]):
     )
 
 
-def train(file_paths: list[str]):
-    # train entire dataset
-    if not file_paths:
-        file_paths = glob.glob(os.path.join(DATA_DIR, "S*", "*.edf"))
+def train(subject_list: list[int], run_list: list[int]):
 
     all_features = []
     all_labels = []
 
     loader = EEGDataLoader()
     preprocessor = EEGPreprocessor()
-    for file_path in file_paths:
-        print("Loading data from: ", file_path)
-        # load data
-        raw = loader.load_data(file_path=file_path)
-        events = loader.extract_events(raw)
 
-        # preprocessing
-        filtered_raw = preprocessor.preprocess(raw=raw)
-        epochs = preprocessor.epoch_data(
-            filtered_raw, events, loader.extract_run_id(file_path)
-        )
-        print("remaining epochs:", len(epochs))
-        if len(epochs) == 0:
-            print(f"Skipping file {file_path} (no valid epochs remaining).")
-            continue
-
-        # extract features
-        features = preprocessor.extract_features(epochs)
-        labels = epochs.events[:, -1]
-        print("labels:", labels)
-
+    for subject in subject_list:
+        raw = loader.load_raws(subject, run_list)
+        preprocessed_raw = preprocessor.preprocess(raw)
+        features, labels = preprocessor.extract_features_and_labels(preprocessed_raw)
         all_features.append(features)
         all_labels.append(labels)
 
     all_features = np.concatenate(all_features, axis=0)
     all_labels = np.concatenate(all_labels, axis=0)
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        all_features, all_labels, test_size=0.2, random_state=42
+    )
 
     pipeline = Pipeline(
         [
@@ -108,19 +113,47 @@ def train(file_paths: list[str]):
             ("classifier", LinearDiscriminantAnalysis()),
         ]
     )
-    scores = cross_val_score(pipeline, all_features, all_labels, cv=6)
-    print("Cross-validation scores:", scores)
-    print("Mean accuracy:", np.mean(scores))
 
-    pipeline.fit(all_features, all_labels)
+    cv = ShuffleSplit(n_splits=5, test_size=0.2, random_state=42)
+    cv_scores = cross_val_score(pipeline, X_train, y_train, cv=cv)
+    print("Cross-validation scores:", cv_scores)
+    print("Mean accuracy:", np.mean(cv_scores))
 
-    with open("model.pkl", "wb") as model_file:
+    pipeline.fit(X_train, y_train)
+    test_score = pipeline.score(X_test, y_test)
+    print("Test accuracy:", test_score)
+
+    with open(f"model.pkl", "wb") as model_file:
         pickle.dump(pipeline, model_file)
-    print("Model saved to model.pkl")
+    print("> Model saved to model.pkl")
+    return np.mean(cv_scores), test_score
+
+
+def run_experiment(args):
+    """
+    Wrapper for training a single experiment.
+    """
+    runs, subject_list = args
+    return train(subject_list, runs)
+
+
+def experiment(subject_list: list[int], run_list: list[int]):
+    """
+    Run experiments in parallel using processes.
+    """
+    subject_list = [s for s in range(1, 110) if s not in BAD_SUBJECTS]
+    tasks = [(runs, subject_list) for runs in RUNS]
+    with ProcessPoolExecutor() as executor:
+        results = list(executor.map(run_experiment, tasks))
+
+    for i, (cv_score, test_score) in enumerate(results):
+        print(f"Experiment {i + 1}: Test Accuracy = {test_score:.4f}")
+
+    print(f"\nMean Accuracy: {np.mean([res[1] for res in results]):.4f}")
 
 
 def simulate_real_time_predictions(
-    pipeline, features: np.ndarray, labels: np.ndarray, delay: float = 2.0
+    pipeline, features: np.ndarray, labels: np.ndarray, delay: float = 0.1
 ):
     """
     Simulate real-time predictions on streaming data.
@@ -142,40 +175,32 @@ def simulate_real_time_predictions(
         time.sleep(delay)
 
 
-def predict(file_paths: list[str]):
-    if not file_paths:
-        raise ValueError("No file paths provided for prediction")
+def predict(subject_list: list[int], run_list: list[int]):
 
-    file_path = file_paths[0]
-    with open("model.pkl", "rb") as model_file:
-        pipeline = pickle.load(model_file)
-    print("Model loaded from model.pkl")
+    for s in subject_list:
+        for r in run_list:
+            file_path = create_file_path(s, r)
+            with open("model.pkl", "rb") as model_file:
+                pipeline = pickle.load(model_file)
+            print("Model loaded from model.pkl")
 
-    loader = EEGDataLoader()
-    preprocessor = EEGPreprocessor()
+            loader = EEGDataLoader()
+            preprocessor = EEGPreprocessor()
 
-    raw = loader.load_data(file_path=file_path)
-    events = loader.extract_events(raw)
-    filtered_raw = preprocessor.preprocess(raw=raw)
-    epochs = preprocessor.epoch_data(
-        filtered_raw, events, loader.extract_run_id(file_path)
-    )
-    print("remaining epochs:", len(epochs))
+            raw = loader.load_data(file_path=file_path)
+            filtered_raw = preprocessor.preprocess(raw=raw)
+            features, labels = preprocessor.extract_features_and_labels(filtered_raw)
 
-    features = preprocessor.extract_features(epochs)
-    labels = epochs.events[:, -1]
+            predictions = pipeline.predict(features)
+            print("Predictions:", predictions)
+            print("Labels:", labels)
 
-    predictions = pipeline.predict(features)
-    print("Predictions:", predictions)
-    accuracy = accuracy_score(labels, predictions)
-    print("Accuracy:", accuracy)
-
-    simulate_real_time_predictions(pipeline, features, labels)
-
-    pass
+            accuracy = accuracy_score(labels, predictions)
+            print("Accuracy:", accuracy)
+            simulate_real_time_predictions(pipeline, features, labels)
 
 
-def create_file_path(subject_id: int, recording_ids: list[int]) -> list[str]:
+def create_file_path(subject_id: int, run_id: int) -> str:
     """
     Create a list of file paths based on subject ID and recording IDs.
     param:
@@ -184,13 +209,9 @@ def create_file_path(subject_id: int, recording_ids: list[int]) -> list[str]:
     return:
         - file_paths: the list of file paths
     """
-    if subject_id is None or not recording_ids:
-        return []
-
-    file_paths = [
-        os.path.join(DATA_DIR, f"S{subject_id:03}", f"S{subject_id:03}R{rec_id:02}.edf")
-        for rec_id in recording_ids
-    ]
+    return os.path.join(
+        DATA_DIR, f"S{subject_id:03}", f"S{subject_id:03}R{run_id:02}.edf"
+    )
 
     return file_paths
 
@@ -223,34 +244,38 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description="EEG Data Analysis")
 
     parser.add_argument(
-        "mode",
+        "--mode",
         type=str,
-        choices=["plot", "train", "predict"],
-        help="Mode of operation: visualize EEG, train model, make predictions",
+        choices=["plot", "train", "predict", "experiment"],
+        help="Mode of operation: visualize EEG, train model, make predictions, experiment with all subjects",
+        default="experiment",
     )
     parser.add_argument(
         "--subject",
         type=validate_subject_id,
+        nargs="+",
         help="Enter the subject ID (between 1 and 109)",
+        default=list(range(1, 110)),
     )
     parser.add_argument(
         "--recording",
         type=validate_recording_id,
         nargs="+",
-        help="Enter a space-separated list of recording IDs (between 1 and 14)",
+        help="Enter a space-separated list of recording IDs (between 3 and 14)",
+        default=list(range(3, 15)),
     )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     print("----------------- 🧠 EEG Data Analysis 🧠 -----------------")
-    # parse cmd arguments
     args = parse_arguments()
-    file_path = create_file_path(args.subject, args.recording)
+
     mode_map = {
         "plot": plot,
         "train": train,
         "predict": predict,
+        "experiment": experiment,
     }
 
     # try:
@@ -258,8 +283,8 @@ if __name__ == "__main__":
     if mode_function is None:
         print("Invalid mode. Please choose from: plot, train, predict")
 
-    print(file_path)
-    mode_function(file_path)
+    # print(file_path)
+    mode_function(args.subject, args.recording)
     # except Exception as e:
     # print("An error occurred:")
     # print(e)

@@ -4,16 +4,28 @@ import shutil
 from typing import Optional
 from .data_models import ChannelInfo, EEGData
 from matplotlib import pyplot as plt
-from .constants import TERMINAL_WIDTH
+from .constants import TERMINAL_WIDTH, DATA_DIR
+import numpy as np
+from mne.io.edf.edf import RawEDF
+from mne.datasets import eegbci
 
 RawEDF = mne.io.edf.edf.RawEDF
+import os
 
 event_lookup = {
     (1, 2): {1: "rest"},
-    (3, 7, 11): {1: "rest", 2: "left fist motion", 3: "right fist motion"},
-    (4, 8, 12): {1: "rest", 2: "left fist imagery", 3: "right fist imagery"},
-    (5, 9, 13): {1: "rest", 2: "both fists motion", 3: "both feet motion"},
-    (6, 10, 14): {1: "rest", 2: "both fists imagery", 3: "both feet imagery"},
+    (3, 7, 11): {
+        1: "rest",
+        2: "Real Left Hand Movement",
+        3: "Real Right Hand Movement",
+    },
+    (4, 8, 12): {
+        1: "rest",
+        2: "Imagery Left Hand Movement",
+        3: "Imagery Right Hand Movement",
+    },
+    (5, 9, 13): {1: "rest", 2: "Real Fists Movement", 3: "Real Feet Movement"},
+    (6, 10, 14): {1: "rest", 2: "Imagery Fists Movement", 3: "Imagery Feet Movement"},
 }
 
 
@@ -31,6 +43,22 @@ class EEGDataLoader:
             print("Error loading data from: ", file_path)
             print(e)
             raise e
+
+    def load_raws(self, subject, runs):
+        raws = []
+        for run in runs:
+            raw = self.load_data(self.create_file_path(subject, run))
+            raws.append(raw)
+        raws = mne.concatenate_raws(raws)
+        print(raws.info)
+        print(raws.ch_names)
+        print(raws.get_data().shape)
+        return raws
+
+    def create_file_path(self, subject_id: int, run_id: int) -> str:
+        return os.path.join(
+            DATA_DIR, f"S{subject_id:03}", f"S{subject_id:03}R{run_id:02}.edf"
+        )
 
     def describe_channel_info(self):
         """
@@ -80,7 +108,6 @@ class EEGDataLoader:
         Extract the events from the raw .edf data
         Each event is represented by a row with 3 integers: [start, previous, event_type]
         event_type are mapped like this:
-          - T0 = 1: resting state, baseline
           - T1 = 2: first task
           - T2 = 3: second task
         """

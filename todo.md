@@ -91,15 +91,15 @@ II. Implement a dimensionality reduction algorithm
 
 III. Use the pipeline object from scikit-learn
 
-- [ ] create pipeline using dimensionality reduction (my own PCA)
-- [ ] add classifier for motion detection task
-- [ ] simulate streaming with playback mechanism
+- [X] create pipeline using dimensionality reduction (my own PCA)
+- [X] add classifier for motion detection task
+- [X] simulate streaming with playback mechanism
 
 IV. Train, Validation and Test
 
-- [ ] cross-validation to evaluate pipeline
-- [ ] split data into training/validation/test sets
-- [ ] minimum accuracy of 60% on the test set
+- [X] cross-validation to evaluate pipeline
+- [X] split data into training/validation/test sets
+- [X] minimum accuracy of 60% on the test set
 
 A l'aide je ne comprends rien:
 
@@ -157,3 +157,13 @@ problèmes:
 
 [[https://www.sciencedirect.com/science/article/pii/S2352340924001525]]
 The dataset can be used to 1) decode MI trials in a binary classification setting: using the same task, either MI or ME; 2) decode MI trials in a multi-class classification setting, using two tasks of either MI or ME; 3) decode MI trials using bilateral or unilateral movements: selecting either fists vs. both feet or left fist vs. right fist; 4) experiment transfer learning using cross-subject tasks: calibrating on specific subjects and evaluating others employing relevant transfer-learning techniques; and 5) train deep-learning models using the large number of trial provisions.
+
+*Comparing between Different Sets of Preprocessing, Classifiers, and Channels Selection Techniques to Optimise Motor Imagery Pattern Classification System from EEG Pattern Recognition* Francesco Ferracuti, Sabrina Iarlori, Zahra Mansour, Andrea Monteriù and Camillo Porcaro
+
+Nine subjects were excluded from the database (subject Number: 38, 88, 89, 92, 93, 94, 100, 104 and 106) because their data contains incorrectly annotated errors labels. 
+
+
+to do:
+- [x] paralleliser les expériences parce que c'est trop looooong
+    -> je pase de 120 secondes à 50/60 s which is not bad
+- [ ] include bad subject to plot mode sinon caca
