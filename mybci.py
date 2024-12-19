@@ -1,55 +1,30 @@
-import os
-import argparse
-
-from src.constants import (
-    N_FFT,
-    DEFAULT_MONTAGE,
-    DATA_DIR,
-    TERMINAL_WIDTH,
-    BAD_SUBJECTS,
-    RUNS,
-)
-from src.EEGDataLoader import EEGDataLoader
-from src.EEGDataVizualizer import EEGDataVizualizer
-from src.EEGPreprocessor import EEGPreprocessor
-from src.data_models import EEGData
-
-import matplotlib.pyplot as plt
-
-from mne.datasets import eegbci
-from mne.channels import make_standard_montage
-
-import mne
-
-from sklearn.decomposition import PCA, FastICA
-
-from mne.decoding import UnsupervisedSpatialFilter
-import numpy as np
-
-from mne.preprocessing import find_bad_channels_maxwell
-
-import glob
-
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.model_selection import cross_val_score
-
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
-
 import pickle
 import time
+import warnings
+from concurrent.futures import ProcessPoolExecutor
+
+import numpy as np
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.metrics import accuracy_score
-from sklearn.model_selection import ShuffleSplit
+from sklearn.model_selection import ShuffleSplit, cross_val_score, train_test_split
+from sklearn.pipeline import Pipeline
+from tqdm import tqdm
 
-from sklearn.model_selection import train_test_split
+from src.CSP import CSP as myCSP
+from src.EEGDataLoader import EEGDataLoader
+from src.EEGPreprocessor import EEGPreprocessor
+from src.EEGDataVizualizer import EEGDataVizualizer
+from src.utils import (
+    parse_arguments,
+    set_dataset_path,
+    create_file_path,
+    display_header,
+    handle_exceptions,
+    log,
+)
+from src.constants import BAD_SUBJECTS, RUNS, TEST_SIZE, N_COMPONENTS, N_SPLITS
 
-from sklearn.svm import SVC
-from sklearn.metrics import classification_report
-from imblearn.over_sampling import SMOTE
-
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-
-import time
+warnings.filterwarnings("ignore", category=RuntimeWarning, module="mne")
 
 
 def plot(subject_id: list[int], run_id: list[int]):
@@ -58,6 +33,7 @@ def plot(subject_id: list[int], run_id: list[int]):
     """
     if len(subject_id) != 1 or len(run_id) != 1:
         raise ValueError("Only a single file path is allowed for plotting")
+
     file_path = create_file_path(subject_id[0], run_id[0])
 
     # Load the data
@@ -66,8 +42,8 @@ def plot(subject_id: list[int], run_id: list[int]):
     loader.describe_eeg_data(raw, file_path)
 
     # Visualize the data before preprocessing
-    vizualizer = EEGDataVizualizer()
-    vizualizer.plot_eeg(
+    visualizer = EEGDataVizualizer()
+    visualizer.plot_eeg(
         raw, title=f"Raw EEG Data for Subject {loader.subject_id} Run {loader.run_id}"
     )
 
@@ -75,84 +51,149 @@ def plot(subject_id: list[int], run_id: list[int]):
     preprocessor = EEGPreprocessor()
     raw = preprocessor.set_montage(raw)
     filtered_raw = preprocessor.filter_data(raw=raw)
-    preprocessor.compute_psd(raw=filtered_raw)
+
+    # Visualize the power spectral density
+    visualizer.plot_psd(raw=filtered_raw)
 
     # Visualize the data after preprocessing
-    vizualizer.plot_eeg(
-        filtered_raw,
+    visualizer.plot_eeg(
+        raw,
         title=f"Filtered EEG Data for Subject {loader.subject_id} Run {loader.run_id}",
     )
 
 
-def train(subject_list: list[int], run_list: list[int]):
+@handle_exceptions
+def train(subject_list: list[int], run_list: list[int], log_active: bool = True):
+    """
+    Train a model for given subjects and runs.
+    """
+    logger = lambda msg: log(msg, log_active)
 
-    all_features = []
-    all_labels = []
-
+    # Load and preprocess data
     loader = EEGDataLoader()
     preprocessor = EEGPreprocessor()
+    X, y = [], []
 
     for subject in subject_list:
+        logger(f"Loading and preprocessing data for Subject {subject}...")
         raw = loader.load_raws(subject, run_list)
         preprocessed_raw = preprocessor.preprocess(raw)
         features, labels = preprocessor.extract_features_and_labels(preprocessed_raw)
-        all_features.append(features)
-        all_labels.append(labels)
+        X.append(features)
+        y.append(labels)
 
-    all_features = np.concatenate(all_features, axis=0)
-    all_labels = np.concatenate(all_labels, axis=0)
+    X = np.concatenate(X, axis=0)
+    y = np.concatenate(y, axis=0)
+
+    logger(f"Data loaded: {X.shape[0]} epochs, {X.shape[1]} features.")
 
     X_train, X_test, y_train, y_test = train_test_split(
-        all_features, all_labels, test_size=0.2, random_state=42
+        X, y, test_size=TEST_SIZE, random_state=42
     )
 
     pipeline = Pipeline(
         [
-            ("scaler", StandardScaler()),
-            ("pca", PCA(n_components=0.99)),
+            ("CSP", myCSP(n_components=N_COMPONENTS)),
             ("classifier", LinearDiscriminantAnalysis()),
         ]
     )
 
-    cv = ShuffleSplit(n_splits=5, test_size=0.2, random_state=42)
+    cv = ShuffleSplit(n_splits=N_SPLITS, test_size=TEST_SIZE, random_state=42)
     cv_scores = cross_val_score(pipeline, X_train, y_train, cv=cv)
-    print("Cross-validation scores:", cv_scores)
-    print("Mean accuracy:", np.mean(cv_scores))
+    logger(f"Cross-validation mean accuracy: {np.mean(cv_scores) * 100:.2f}%")
 
     pipeline.fit(X_train, y_train)
-    test_score = pipeline.score(X_test, y_test)
-    print("Test accuracy:", test_score)
+    test_accuracy = pipeline.score(X_test, y_test)
+    logger(f"Test accuracy: {test_accuracy * 100:.2f}%")
 
-    with open(f"model.pkl", "wb") as model_file:
+    with open("model.pkl", "wb") as model_file:
         pickle.dump(pipeline, model_file)
-    print("> Model saved to model.pkl")
-    return np.mean(cv_scores), test_score
+
+    logger("Model saved: model.pkl")
+
+    return np.mean(cv_scores), test_accuracy
 
 
-def run_experiment(args):
+@handle_exceptions
+def experiment(subject_list: list[int], run_list: list[int]):
+    """
+    Execute training for each subject and compute the mean score
+    over each subject, by type of experiment runs.
+    """
+    subject_list = [s for s in range(1, 110) if s not in BAD_SUBJECTS]
+
+    run_scores = {i: [] for i in range(len(RUNS))}
+
+    print("Starting experiments...")
+
+    for run_id, runs in enumerate(RUNS):
+        print(f"\nProcessing Experiment {run_id + 1}: Runs {runs}")
+        cv_score, test_score = train(subject_list, runs, log_active=True)
+        run_scores[run_id].append(test_score)
+
+    mean_scores_per_run = []
+    for run_id, scores in run_scores.items():
+        mean_score = np.mean(scores)
+        mean_scores_per_run.append(mean_score)
+        print(f"Experiment {run_id + 1}: Mean Accuracy = {mean_score:.4f}")
+
+    global_mean_accuracy = np.mean(mean_scores_per_run)
+    print(f"\nGlobal mean accuracy across runs: {global_mean_accuracy:.4f}")
+
+    if global_mean_accuracy >= 0.6:
+        print("Global accuracy is greater than 60%.")
+    else:
+        print("Global accuracy is less than 60%.")
+
+
+def _run_experiment(args):
     """
     Wrapper for training a single experiment.
     """
     runs, subject_list = args
-    return train(subject_list, runs)
+    return train(subject_list, runs, log_active=False)
 
 
-def experiment(subject_list: list[int], run_list: list[int]):
+def _experiment(subject_list: list[int], run_list: list[int]):
     """
-    Run experiments in parallel using processes.
+    Execute training for each subject and compute the mean score
+    over each subject, by type of experiment runs.
     """
     subject_list = [s for s in range(1, 110) if s not in BAD_SUBJECTS]
+
+    run_scores = {i: [] for i in range(len(RUNS))}
+
     tasks = [(runs, subject_list) for runs in RUNS]
+
+    print("Starting experiments...")
     with ProcessPoolExecutor() as executor:
-        results = list(executor.map(run_experiment, tasks))
+        results = list(
+            tqdm(
+                executor.map(run_experiment, tasks),
+                total=len(tasks),
+                desc="Experiments progress",
+            )
+        )
 
-    for i, (cv_score, test_score) in enumerate(results):
-        print(f"Experiment {i + 1}: Test Accuracy = {test_score:.4f}")
+    for run_id, (cv_score, test_score) in enumerate(results):
+        run_scores[run_id].append(test_score)
 
-    print(f"\nMean Accuracy: {np.mean([res[1] for res in results]):.4f}")
+    mean_scores_per_run = []
+    for run_id, scores in run_scores.items():
+        mean_score = np.mean(scores)
+        mean_scores_per_run.append(mean_score)
+        print(f"Experiment {run_id + 1}: Mean Accuracy = {mean_score:.4f}")
+
+    global_mean_accuracy = np.mean(mean_scores_per_run)
+    print(f"\nGlobal mean accuracy accross runs {global_mean_accuracy:.4f}")
+
+    if global_mean_accuracy >= 0.6:
+        print("Global accuracy is greater than 60%.")
+    else:
+        print("Global accuracy is less than 60%.")
 
 
-def simulate_real_time_predictions(
+def stream_predictions(
     pipeline, features: np.ndarray, labels: np.ndarray, delay: float = 0.1
 ):
     """
@@ -169,107 +210,43 @@ def simulate_real_time_predictions(
     print(header)
 
     for i, (feature, label) in enumerate(zip(features, labels)):
-        prediction = pipeline.predict(feature.reshape(1, -1))
+        prediction = pipeline.predict(feature.reshape(1, feature.shape[0], -1))
         result = f"{i:<10}{prediction[0]:<15}{label:<10}{'True' if prediction[0] == label else 'False':<10}"
         print(result)
         time.sleep(delay)
 
 
+@handle_exceptions
 def predict(subject_list: list[int], run_list: list[int]):
+    loader = EEGDataLoader()
+    preprocessor = EEGPreprocessor()
 
-    for s in subject_list:
-        for r in run_list:
-            file_path = create_file_path(s, r)
+    for subject in subject_list:
+        for run in run_list:
+            file_path = create_file_path(subject, run)
             with open("model.pkl", "rb") as model_file:
                 pipeline = pickle.load(model_file)
-            print("Model loaded from model.pkl")
-
-            loader = EEGDataLoader()
-            preprocessor = EEGPreprocessor()
+            print("Model successfully loaded from model.pkl")
 
             raw = loader.load_data(file_path=file_path)
             filtered_raw = preprocessor.preprocess(raw=raw)
-            features, labels = preprocessor.extract_features_and_labels(filtered_raw)
+            x, y = preprocessor.extract_features_and_labels(filtered_raw)
 
-            predictions = pipeline.predict(features)
-            print("Predictions:", predictions)
-            print("Labels:", labels)
+            y_pred = pipeline.predict(x)
+            accuracy = accuracy_score(y, y_pred)
+            stream_predictions(pipeline, x, y)
 
-            accuracy = accuracy_score(labels, predictions)
-            print("Accuracy:", accuracy)
-            simulate_real_time_predictions(pipeline, features, labels)
+            print("\nPrediction Results:")
+            print(f"  - Number of epochs: {len(x)}")
+            print(f"  - True Labels: {y.tolist()}")
+            print(f"  - Model'subject Predictions: {y_pred.tolist()}")
+            print(f"  - Accuracy: {accuracy:.2%}")
 
-
-def create_file_path(subject_id: int, run_id: int) -> str:
-    """
-    Create a list of file paths based on subject ID and recording IDs.
-    param:
-        - subject_id: the subject ID
-        - recording_ids: the list of recording IDs
-    return:
-        - file_paths: the list of file paths
-    """
-    return os.path.join(
-        DATA_DIR, f"S{subject_id:03}", f"S{subject_id:03}R{run_id:02}.edf"
-    )
-
-    return file_paths
-
-
-def parse_arguments():
-    """
-    Parse the command line arguments
-    """
-
-    def validate_subject_id(arg: str) -> int:
-        """
-        Validate a single subject ID.
-        """
-        value = int(arg)
-        if value < 1 or value > 109:
-            raise argparse.ArgumentTypeError("Subject ID must be between 1 and 109")
-        return value
-
-    def validate_recording_id(arg: str) -> int:
-        """
-        Validate a single recording ID.
-        """
-        value = int(arg)
-        if value < 1 or value > 14:
-            raise argparse.ArgumentTypeError(
-                "Each Recording ID must be between 1 and 14"
-            )
-        return value
-
-    parser = argparse.ArgumentParser(description="EEG Data Analysis")
-
-    parser.add_argument(
-        "--mode",
-        type=str,
-        choices=["plot", "train", "predict", "experiment"],
-        help="Mode of operation: visualize EEG, train model, make predictions, experiment with all subjects",
-        default="experiment",
-    )
-    parser.add_argument(
-        "--subject",
-        type=validate_subject_id,
-        nargs="+",
-        help="Enter the subject ID (between 1 and 109)",
-        default=list(range(1, 110)),
-    )
-    parser.add_argument(
-        "--recording",
-        type=validate_recording_id,
-        nargs="+",
-        help="Enter a space-separated list of recording IDs (between 3 and 14)",
-        default=list(range(3, 15)),
-    )
-    return parser.parse_args()
-
-
-if __name__ == "__main__":
-    print("----------------- 🧠 EEG Data Analysis 🧠 -----------------")
+@handle_exceptions
+def main():
     args = parse_arguments()
+    set_dataset_path(args.dataset_path)
+    display_header(args.mode, args.subject, args.recording)
 
     mode_map = {
         "plot": plot,
@@ -278,14 +255,11 @@ if __name__ == "__main__":
         "experiment": experiment,
     }
 
-    # try:
     mode_function = mode_map.get(args.mode)
     if mode_function is None:
-        print("Invalid mode. Please choose from: plot, train, predict")
+        print("Invalid mode. Please choose from: plot, train, predict, experiment")
 
-    # print(file_path)
     mode_function(args.subject, args.recording)
-    # except Exception as e:
-    # print("An error occurred:")
-    # print(e)
-    # exit(1)
+
+if __name__ == "__main__":
+    main()

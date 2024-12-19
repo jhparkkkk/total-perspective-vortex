@@ -167,3 +167,5 @@ to do:
 - [x] paralleliser les expériences parce que c'est trop looooong
     -> je pase de 120 secondes à 50/60 s which is not bad
 - [ ] include bad subject to plot mode sinon caca
+
+https://ava.ac/publication/csp-report.pdf

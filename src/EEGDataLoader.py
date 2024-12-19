@@ -1,32 +1,9 @@
 import mne
-import mne.io.edf.edf
-import shutil
-from typing import Optional
-from .data_models import ChannelInfo, EEGData
-from matplotlib import pyplot as plt
-from .constants import TERMINAL_WIDTH, DATA_DIR
-import numpy as np
 from mne.io.edf.edf import RawEDF
-from mne.datasets import eegbci
+from .data_models import ChannelInfo, EEGData
+from .constants import TERMINAL_WIDTH, EVENT_LOOKUP
 
-RawEDF = mne.io.edf.edf.RawEDF
-import os
-
-event_lookup = {
-    (1, 2): {1: "rest"},
-    (3, 7, 11): {
-        1: "rest",
-        2: "Real Left Hand Movement",
-        3: "Real Right Hand Movement",
-    },
-    (4, 8, 12): {
-        1: "rest",
-        2: "Imagery Left Hand Movement",
-        3: "Imagery Right Hand Movement",
-    },
-    (5, 9, 13): {1: "rest", 2: "Real Fists Movement", 3: "Real Feet Movement"},
-    (6, 10, 14): {1: "rest", 2: "Imagery Fists Movement", 3: "Imagery Feet Movement"},
-}
+from .utils import create_file_path
 
 
 class EEGDataLoader:
@@ -38,27 +15,19 @@ class EEGDataLoader:
         Load the EEG data from the .edf file path
         """
         try:
-            return mne.io.read_raw_edf(file_path, preload=True)
+            return mne.io.read_raw_edf(file_path, preload=True, verbose=False)
         except Exception as e:
-            print("Error loading data from: ", file_path)
-            print(e)
-            raise e
+            raise ValueError("Subject ID not provided.")
 
-    def load_raws(self, subject, runs):
+    def load_raws(self, subject: int, runs: list[int]) -> RawEDF:
+        if subject is None:
+            raise ValueError("Subject ID not provided.")
         raws = []
         for run in runs:
-            raw = self.load_data(self.create_file_path(subject, run))
+            raw = self.load_data(create_file_path(subject, run))
             raws.append(raw)
         raws = mne.concatenate_raws(raws)
-        print(raws.info)
-        print(raws.ch_names)
-        print(raws.get_data().shape)
         return raws
-
-    def create_file_path(self, subject_id: int, run_id: int) -> str:
-        return os.path.join(
-            DATA_DIR, f"S{subject_id:03}", f"S{subject_id:03}R{run_id:02}.edf"
-        )
 
     def describe_channel_info(self):
         """
@@ -113,7 +82,7 @@ class EEGDataLoader:
         """
         if raw is None:
             raise ValueError("Raw data not loaded yet.")
-        events, _ = mne.events_from_annotations(raw)
+        events, _ = mne.events_from_annotations(raw, verbose=False)
         return events
 
     def _extract_eeg_data(self, raw, file_path) -> EEGData:
@@ -156,7 +125,7 @@ class EEGDataLoader:
         """
         Decode the event type using event_lookup into a human readable format
         """
-        for key, value in event_lookup.items():
+        for key, value in EVENT_LOOKUP.items():
             if run_id in key:
                 return value
         return "Unknown Task"

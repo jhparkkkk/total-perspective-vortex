@@ -5,80 +5,95 @@ import matplotlib.pyplot as plt
 
 from .constants import (
     GOOD_CHANNELS,
-    N_FFT,
+    REF_CHANNELS,
     DEFAULT_MONTAGE,
     LOW_FREQUENCY,
     HIGH_FREQUENCY,
-    REF_CHANNELS,
-    N_COMPONENTS,
+    T_MIN,
+    T_MAX,
 )
 from mne.datasets import eegbci
 from mne.channels import make_standard_montage
-from mne.decoding import UnsupervisedSpatialFilter
-
-from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.decomposition import PCA, FastICA
+from sklearn.preprocessing import StandardScaler
 
 
-class EEGPreprocessor(BaseEstimator, TransformerMixin):
-    """
-    Preprocess the EEG data
-    """
+class EEGPreprocessor:
 
-    def __init__(
-        self, l_freq=LOW_FREQUENCY, h_freq=HIGH_FREQUENCY, n_components=N_COMPONENTS
-    ):
+    def __init__(self, l_freq=LOW_FREQUENCY, h_freq=HIGH_FREQUENCY):
         self.l_freq = l_freq
         self.h_freq = h_freq
-        self.n_components = n_components
+        self.scaler = StandardScaler()
 
-        pass
+    def preprocess(self, raw: mne.io.edf.edf.RawEDF) -> mne.io.edf.edf.RawEDF:
+        preprocessing_steps = [
+            self.set_montage,
+            self.filter_data,
+            self._mark_bad_channels,
+            self.normalize_data,
+        ]
 
-    def preprocess(self, raw):
-        """
-        Preprocess the raw data
-        """
-        raw = self.set_montage(raw)
-        raw = self.filter_data(raw)
-        raw = self.mark_bad_channels(raw)
+        for step in preprocessing_steps:
+            raw = step(raw)
         return raw
 
-    def filter_data(self, raw):
-        """
-        Filter the data by keeping alpha and beta frequencies
-        Alpha 8-13 Hz rest state, no movement
-        Beta 13-30 Hz movement and cognitive tasks
-        """
-        raw.set_eeg_reference(ref_channels=REF_CHANNELS)
-        raw.filter(l_freq=self.l_freq, h_freq=self.h_freq)
-        return raw
+    def filter_data(self, raw: mne.io.edf.edf.RawEDF) -> mne.io.edf.edf.RawEDF:
+        return raw.filter(
+            LOW_FREQUENCY,
+            HIGH_FREQUENCY,
+            fir_design="firwin",
+            skip_by_annotation="edge",
+            verbose=False,
+        )
 
-    def mark_bad_channels(self, raw):
-        """
-        Remove the bad channels
-        """
-        good_channels = GOOD_CHANNELS
-        bad_channels = [ch for ch in raw.ch_names if ch not in good_channels]
+    def _mark_bad_channels(self, raw: mne.io.edf.edf.RawEDF) -> mne.io.edf.edf.RawEDF:
+        bad_channels = [ch for ch in raw.ch_names if ch not in GOOD_CHANNELS]
         raw.info["bads"] = bad_channels
-
         return raw
 
     def set_montage(self, raw):
-        """
-        Set the montage
-        """
         eegbci.standardize(raw)
         montage = make_standard_montage(DEFAULT_MONTAGE)
         raw.set_montage(montage)
+        raw.set_eeg_reference(ref_channels=REF_CHANNELS, verbose=False)
         return raw
 
-    def compute_psd(self, raw):
-        """
-        Compute the power spectral density
-        """
-        psd = raw.compute_psd(method="multitaper", picks="eeg", fmin=1, fmax=80)
-        psd.plot()
-        return psd
+    def normalize_data(self, raw):
+        eeg_data = raw.get_data(picks="eeg")
+        normalized_data = self.scaler.fit_transform(eeg_data.T).T
+        raw._data[: len(normalized_data)] = normalized_data
+        return raw
+
+    def compute_psd(self, epochs):
+        psd_data = epochs.compute_psd(
+                fmin=LOW_FREQUENCY,
+                fmax=HIGH_FREQUENCY,
+                method="multitaper",
+                verbose=False,
+            )
+
+        psds, _ = psd_data.get_data(return_freqs=True)
+        return psds
+    
+    def epoch_data(self, raw):
+        events, _ = mne.events_from_annotations(raw, verbose=False)
+
+        eeg_channel_idx = mne.pick_types(
+            raw.info, meg=False, eeg=True, stim=False, eog=False, exclude="bads"
+        )
+        epochs = mne.Epochs(
+            raw=raw,
+            events=events,
+            event_id=dict(T1=2, T2=3),
+            tmin=T_MIN,
+            tmax=T_MAX,
+            proj=False,
+            picks=eeg_channel_idx,
+            baseline=None,
+            preload=True,
+            verbose=False,
+        )
+        epochs.drop_bad()
+        return epochs
 
     def extract_features_and_labels(self, raw) -> np.ndarray:
         """
@@ -96,51 +111,15 @@ class EEGPreprocessor(BaseEstimator, TransformerMixin):
         """
         try:
             epochs = self.epoch_data(raw)
-
-            psd_data = epochs.compute_psd(
-                fmin=self.l_freq, fmax=self.h_freq, method="multitaper"
-            )
-
-            psds, freqs = psd_data.get_data(return_freqs=True)
-
+            psd_data = self.compute_psd(epochs)
+            
             # psds.shape = (n_epochs, n_channels, n_freqs)
-            features = psds.mean(axis=2)
-
-            labels = epochs.events[:, -1]
+            features = psd_data
+            labels = epochs.events[:, -1] - 2
             return features, labels
 
         except Exception as e:
             print("Error extracting features:", e)
             raise e
 
-    def epoch_data(self, raw):
-        """
-        Epoch the data
-        """
-        events, _ = mne.events_from_annotations(raw)
-
-        picks = mne.pick_types(
-            raw.info, meg=False, eeg=True, stim=False, eog=False, exclude="bads"
-        )
-
-        event_id = dict(T1=1, T2=2)
-
-        epochs = mne.Epochs(
-            raw=raw,
-            events=events,
-            event_id=event_id,
-            tmin=-1.0,
-            tmax=2.0,
-            picks=picks,
-            baseline=(None),
-            preload=True,
-            verbose=True,
-        )
-        epochs.drop_bad()
-        return epochs
-
-    def fit(self, X, y=None):
-        return self
-
-    def transform(self, X):
-        pass
+    

@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from .data_models import EEGData
-
+from .EEGPreprocessor import EEGPreprocessor
 
 class EEGDataVizualizer:
     def __init__(self):
@@ -18,3 +17,11 @@ class EEGDataVizualizer:
         if title:
             fig.canvas.manager.set_window_title(title)
         plt.show()
+
+    def plot_psd(self, raw):
+        """
+        Plot the power spectral density of the EEG data
+        """
+        fmax= raw.info["sfreq"] / 2 * 0.9
+        fig = raw.compute_psd(method="multitaper", verbose=False, fmin=1, fmax=fmax)
+        fig.plot()
